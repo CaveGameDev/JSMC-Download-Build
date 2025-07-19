@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test - Website Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        input[type="url"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .console {
+            background: #1e1e1e;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <h1>🌐 Website Downloader API Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Health Check</h2>
+        <p>Test if the API is working and ready to accept requests.</p>
+        <button onclick="runHealthCheck()">Run Health Check</button>
+        <div id="health-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Quick Download Test</h2>
+        <p>Test a complete download process for example.com</p>
+        <button onclick="runQuickTest()">Download example.com</button>
+        <div id="quick-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Custom URL Download</h2>
+        <p>Enter a URL to download:</p>
+        <input type="url" id="customUrl" placeholder="https://example.com" value="https://example.com">
+        <button onclick="runCustomDownload()">Download Custom URL</button>
+        <div id="custom-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. Step-by-Step Test</h2>
+        <p>Test the download process step by step with detailed logging.</p>
+        <button onclick="runStepByStep()">Run Step-by-Step Test</button>
+        <div id="step-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>5. Console Output</h2>
+        <p>Real-time console output from the API calls:</p>
+        <div id="console-output" class="console"></div>
+        <button onclick="clearConsole()">Clear Console</button>
+    </div>
+
+    <script src="/api-test.js"></script>
+    <script>
+        // Override console.log to also display in the page
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        function addToConsole(message, type = 'log') {
+            const consoleDiv = document.getElementById('console-output');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : type === 'warn' ? '#ffd93d' : '#4ecdc4';
+            consoleDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole(args.join(' '), 'error');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToConsole(args.join(' '), 'warn');
+        };
+        
+        function updateStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+        
+        function runHealthCheck() {
+            updateStatus('health-status', 'Checking API health...', 'info');
+            testHealthCheck()
+                .then(() => {
+                    updateStatus('health-status', '✅ API is healthy and ready!', 'success');
+                })
+                .catch(error => {
+                    updateStatus('health-status', `❌ Health check failed: ${error.message}`, 'error');
+                });
+        }
+        
+        function runQuickTest() {
+            updateStatus('quick-status', 'Starting quick download test...', 'info');
+            testDownload('https://example.com')
+                .then(() => {
+                    updateStatus('quick-status', '✅ Quick test completed successfully!', 'success');
+                })
+                .catch(error => {
+                    updateStatus('quick-status', `❌ Quick test failed: ${error.message}`, 'error');
+                });
+        }
+        
+        function runCustomDownload() {
+            const url = document.getElementById('customUrl').value;
+            if (!url) {
+                updateStatus('custom-status', '❌ Please enter a URL', 'error');
+                return;
+            }
+            
+            updateStatus('custom-status', `Starting download for: ${url}`, 'info');
+            testDownload(url)
+                .then(() => {
+                    updateStatus('custom-status', `✅ Download completed for: ${url}`, 'success');
+                })
+                .catch(error => {
+                    updateStatus('custom-status', `❌ Download failed: ${error.message}`, 'error');
+                });
+        }
+        
+        function runStepByStep() {
+            updateStatus('step-status', 'Starting step-by-step test...', 'info');
+            testStepByStep('https://example.com')
+                .then(() => {
+                    updateStatus('step-status', '✅ Step-by-step test completed!', 'success');
+                })
+                .catch(error => {
+                    updateStatus('step-status', `❌ Step-by-step test failed: ${error.message}`, 'error');
+                });
+        }
+        
+        function clearConsole() {
+            document.getElementById('console-output').innerHTML = '';
+        }
+        
+        // Auto-run health check when page loads
+        window.addEventListener('load', () => {
+            console.log('🚀 API Test Page Loaded');
+            setTimeout(runHealthCheck, 1000);
+        });
+    </script>
+</body>
+</html> 
