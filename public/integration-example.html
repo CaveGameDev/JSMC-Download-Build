@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integration Example - Your Website</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+        .main-content {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .sidebar {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .download-widget {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin: 5px 0;
+        }
+        button:hover {
+            background: #218838;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .status.processing {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.completed {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+        .iframe-container {
+            border: 2px solid #007bff;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .iframe-container iframe {
+            width: 100%;
+            height: 400px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Your Website</h1>
+        <p>This is an example of how to integrate the Website Downloader into your own site</p>
+    </div>
+    
+    <div class="content">
+        <div class="main-content">
+            <h2>Main Content Area</h2>
+            <p>This is your website's main content. You can place the downloader widget anywhere on your page.</p>
+            
+            <h3>Example: Embedding the Downloader</h3>
+            <p>You can embed the downloader in several ways:</p>
+            
+            <h4>1. As a Widget in Your Sidebar</h4>
+            <p>Add a download button that users can click to download your site.</p>
+            
+            <h4>2. As an Iframe</h4>
+            <p>Embed the full downloader interface in an iframe:</p>
+            
+            <div class="iframe-container">
+                <iframe src="http://localhost:3000/demo.html"></iframe>
+            </div>
+            
+            <h4>3. As a JavaScript Integration</h4>
+            <p>Use the embed script to add download functionality to your own buttons and forms.</p>
+        </div>
+        
+        <div class="sidebar">
+            <h3>Download Widget</h3>
+            <div class="download-widget">
+                <p>Download this website for offline viewing:</p>
+                
+                <button onclick="downloadCurrentSite()">Download This Site</button>
+                <button onclick="downloadCustomSite()">Download Custom URL</button>
+                
+                <div id="download-status"></div>
+                
+                <hr>
+                
+                <h4>Quick Links</h4>
+                <ul>
+                    <li><a href="#" onclick="downloadExample()">Download example.com</a></li>
+                    <li><a href="#" onclick="downloadGoogle()">Download google.com</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include the Website Downloader embed script -->
+    <script src="http://localhost:3000/embed.js"></script>
+    
+    <script>
+        function downloadCurrentSite() {
+            const statusDiv = document.getElementById('download-status');
+            statusDiv.innerHTML = '<div class="status processing">Starting download...</div>';
+            
+            // Get the current page URL
+            const currentUrl = window.location.href;
+            
+            WebsiteDownloader.download(currentUrl)
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+        
+        function downloadCustomSite() {
+            const url = prompt('Enter website URL to download:');
+            if (!url) return;
+            
+            const statusDiv = document.getElementById('download-status');
+            statusDiv.innerHTML = '<div class="status processing">Starting download...</div>';
+            
+            WebsiteDownloader.download(url)
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+        
+        function downloadExample() {
+            const statusDiv = document.getElementById('download-status');
+            statusDiv.innerHTML = '<div class="status processing">Starting download...</div>';
+            
+            WebsiteDownloader.download('https://example.com')
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+        
+        function downloadGoogle() {
+            const statusDiv = document.getElementById('download-status');
+            statusDiv.innerHTML = '<div class="status processing">Starting download...</div>';
+            
+            WebsiteDownloader.download('https://google.com')
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+    </script>
+</body>
+</html> 

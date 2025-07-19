@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Downloader - Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .demo-section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .code {
+            background: #333;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: monospace;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .status.processing {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.completed {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Website Downloader - Embed Demo</h1>
+    
+    <p>This page demonstrates how to use the Website Downloader embed script on your own website.</p>
+    
+    <div class="demo-section">
+        <h2>1. Include the Script</h2>
+        <p>Add this script tag to your HTML page:</p>
+        <div class="code">
+&lt;script src="http://localhost:3000/embed.js"&gt;&lt;/script&gt;
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>2. Download a Specific URL</h2>
+        <p>Use the download function to download any website:</p>
+        <div class="code">
+WebsiteDownloader.download('https://example.com')
+  .then(result => {
+    console.log('Download completed:', result);
+    // result.downloadUrl contains the download link
+  })
+  .catch(error => {
+    console.error('Download failed:', error);
+  });
+        </div>
+        
+        <button onclick="downloadExample()">Download example.com</button>
+        <div id="example-status"></div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>3. Auto-Download from Iframe Context</h2>
+        <p>If your script is running in an iframe, you can auto-download the parent page:</p>
+        <div class="code">
+WebsiteDownloader.autoDownload()
+  .then(result => {
+    console.log('Auto-download completed:', result);
+  })
+  .catch(error => {
+    console.error('Auto-download failed:', error);
+  });
+        </div>
+        
+        <button onclick="autoDownload()">Try Auto-Download</button>
+        <div id="auto-status"></div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>4. Iframe Integration Example</h2>
+        <p>Here's how you can embed this downloader in an iframe on another site:</p>
+        <div class="code">
+&lt;iframe src="http://localhost:3000/demo.html" 
+        width="100%" 
+        height="400px" 
+        style="border: 1px solid #ccc;"&gt;&lt;/iframe&gt;
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>5. Custom Download Options</h2>
+        <p>You can pass custom options to the download function:</p>
+        <div class="code">
+WebsiteDownloader.download('https://example.com', {
+  // Add any custom options here
+  customOption: 'value'
+})
+        </div>
+    </div>
+
+    <script src="/embed.js"></script>
+    <script>
+        function downloadExample() {
+            const statusDiv = document.getElementById('example-status');
+            statusDiv.innerHTML = '<div class="status processing">Starting download...</div>';
+            
+            WebsiteDownloader.download('https://example.com')
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+        
+        function autoDownload() {
+            const statusDiv = document.getElementById('auto-status');
+            statusDiv.innerHTML = '<div class="status processing">Trying auto-download...</div>';
+            
+            WebsiteDownloader.autoDownload()
+                .then(result => {
+                    statusDiv.innerHTML = `
+                        <div class="status completed">
+                            Auto-download completed! 
+                            <a href="${result.downloadUrl}" target="_blank">Download ZIP file</a>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `
+                        <div class="status error">
+                            Auto-download failed: ${error.message}
+                        </div>
+                    `;
+                });
+        }
+    </script>
+</body>
+</html> 
