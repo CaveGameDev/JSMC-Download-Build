@@ -1,4 +1,4 @@
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const archiver = require('archiver');
 const fs = require('fs');
 const path = require('path');
@@ -21,137 +21,44 @@ function listFilesRecursive(dir) {
   return results;
 }
 
-// Real website download using wget, always to /tmp/<token>
-function downloadWebsite(website, token) {
-  return new Promise((resolve, reject) => {
-    // Update status to processing
-    downloadRequests.set(token, {
-      status: 'processing',
-      progress: 'Starting download...',
-      website: website,
-      startTime: Date.now()
-    });
+function downloadAndZip(url, token, callback) {
+  const downloadDir = `/tmp/${token}`;
+  const zipPath = `/tmp/${token}.zip`;
 
-    const downloadDir = `/tmp/${token}`;
-    // Ensure the directory exists
-    fs.mkdirSync(downloadDir, { recursive: true });
+  // Ensure the directory exists
+  fs.mkdirSync(downloadDir, { recursive: true });
 
-    // Use wget to download the website into /tmp/<token>
-    // wget -mkEpnp -P /tmp/<token> <website>
-    const wgetCmd = `wget -mkEpnp -P ${downloadDir} --no-check-certificate ${website}`;
-    console.log('Running wget command:', wgetCmd);
-    const child = exec(wgetCmd);
+  // Add --wait=1 to slow down requests
+  const wget = spawn('wget', [
+    '-mkEpnp',
+    '--wait=1', // Wait 1 second between requests
+    '-P', downloadDir,
+    url
+  ]);
 
-    child.stdout.on('data', data => console.log('wget stdout:', data.toString()));
-    child.stderr.on('data', data => console.log('wget stderr:', data.toString()));
+  let wgetOutput = '';
+  let wgetError = '';
 
-    // Read stderr for progress updates
-    child.stderr.on('data', (response) => {
-      // Update progress in tracking
-      if (downloadRequests.has(token)) {
-        const download = downloadRequests.get(token);
-        download.progress = response;
-        downloadRequests.set(token, download);
-      }
-    });
+  wget.stdout.on('data', (data) => { wgetOutput += data.toString(); });
+  wget.stderr.on('data', (data) => { wgetError += data.toString(); });
 
-    child.on('close', (code) => {
-      // Log directory contents after wget
-      try {
-        console.log('Files in downloadDir after wget:', fs.readdirSync(downloadDir));
-        console.log('All files recursively:', listFilesRecursive(downloadDir));
-      } catch (e) {
-        console.log('Error listing files:', e);
-      }
-      // Update status to converting
-      if (downloadRequests.has(token)) {
-        const download = downloadRequests.get(token);
-        download.progress = 'Converting to ZIP...';
-        downloadRequests.set(token, download);
-      }
-      // Start archiving process
-      createArchive(downloadDir, token, resolve, reject);
-    });
-
-    // Handle errors
-    child.on('error', (error) => {
-      console.error('Download error:', error);
-      if (downloadRequests.has(token)) {
-        const download = downloadRequests.get(token);
-        download.status = 'error';
-        download.error = error.message;
-        downloadRequests.set(token, download);
-      }
-      reject(error);
-    });
-  });
-}
-
-// Create ZIP archive of downloaded files
-function createArchive(downloadDir, token, resolve, reject) {
-  try {
-    // Log directory contents before zipping
-    try {
-      console.log('Files in downloadDir before zipping:', fs.readdirSync(downloadDir));
-      console.log('All files recursively before zipping:', listFilesRecursive(downloadDir));
-    } catch (e) {
-      console.log('Error listing files before zipping:', e);
+  wget.on('close', (code) => {
+    if (code !== 0) {
+      callback(new Error(`wget failed: ${wgetError}`));
+      return;
     }
-    const filename = `${token}.zip`;
-    const zipPath = path.join('/tmp', filename);
+
+    // Now create the ZIP
     const output = fs.createWriteStream(zipPath);
-    const archive = archiver('zip', {
-      zlib: { level: 9 }
-    });
+    const archive = archiver('zip', { zlib: { level: 9 } });
 
-    output.on('close', function() {
-      console.log(archive.pointer() + ' total bytes');
-      console.log('Archive finalized');
-      // Update status to completed
-      if (downloadRequests.has(token)) {
-        const download = downloadRequests.get(token);
-        download.status = 'completed';
-        download.filename = filename;
-        download.progress = 'Completed';
-        download.downloadUrl = `/api/download-file/${filename}`;
-        downloadRequests.set(token, download);
-      }
-      // Optionally clean up the download directory
-      try {
-        fs.rmSync(downloadDir, { recursive: true, force: true });
-      } catch (e) { /* ignore */ }
-      resolve();
-    });
-
-    archive.on('error', function(err) {
-      console.error('Archive error:', err);
-      if (downloadRequests.has(token)) {
-        const download = downloadRequests.get(token);
-        download.status = 'error';
-        download.error = err.message;
-        downloadRequests.set(token, download);
-      }
-      reject(err);
-    });
+    output.on('close', () => callback(null, zipPath));
+    archive.on('error', (err) => callback(err));
 
     archive.pipe(output);
-    // Add the entire download directory to the archive
-    if (fs.existsSync(downloadDir)) {
-      archive.directory(downloadDir, false);
-    } else {
-      archive.append('Website download completed but no files found.', { name: 'README.txt' });
-    }
+    archive.directory(downloadDir, false);
     archive.finalize();
-  } catch (error) {
-    console.error('Archive creation error:', error);
-    if (downloadRequests.has(token)) {
-      const download = downloadRequests.get(token);
-      download.status = 'error';
-      download.error = error.message;
-      downloadRequests.set(token, download);
-    }
-    reject(error);
-  }
+  });
 }
 
 exports.handler = async (event, context) => {
