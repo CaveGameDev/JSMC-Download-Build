@@ -1,3 +1,4 @@
+const { exec } = require('child_process');
 const archiver = require('archiver');
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +16,7 @@ function extractDomain(url) {
   }
 }
 
-// Download website using wget
+// Real website download using wget
 function downloadWebsite(website, token) {
   return new Promise((resolve, reject) => {
     // Update status to processing
@@ -26,61 +27,122 @@ function downloadWebsite(website, token) {
       startTime: Date.now()
     });
 
-    // For Netlify functions, we'll simulate the download process
-    // In a real implementation, you'd need to use a different approach
-    // since wget isn't available in serverless functions
+    let websiteDir = "";
     
-    let domain = extractDomain(website);
-    
-    // Simulate download progress
-    const progressInterval = setInterval(() => {
-      const download = downloadRequests.get(token);
-      if (download) {
-        download.progress = 'Downloading files...';
+    // Use wget to download the website
+    // wget -mkEpnp: mirror, convert links, adjust extensions, page requisites, no parent
+    const child = exec(`wget -mkEpnp ${website}`);
+
+    // Read stderr for progress updates
+    child.stderr.on("data", (response) => {
+      if (response.startsWith("Resolving ")) {
+        websiteDir = response.substring(response.indexOf('Resolve ') + 11, response.indexOf(' ('));
+      }
+      
+      // Update progress in tracking
+      if (downloadRequests.has(token)) {
+        const download = downloadRequests.get(token);
+        download.progress = response;
         downloadRequests.set(token, download);
       }
-    }, 2000);
+    });
 
-    // Simulate completion after 5 seconds
-    setTimeout(() => {
-      clearInterval(progressInterval);
+    child.stderr.on('close', (response) => {
+      // Update status to converting
+      if (downloadRequests.has(token)) {
+        const download = downloadRequests.get(token);
+        download.progress = "Converting to ZIP...";
+        downloadRequests.set(token, download);
+      }
       
-      // Create a dummy ZIP file (in production, you'd create the actual archive)
-      const filename = domain + '.zip';
-      const zipPath = path.join('/tmp', filename);
+      // Start archiving process
+      createArchive(websiteDir, token, resolve, reject);
+    });
+
+    // Handle errors
+    child.on('error', (error) => {
+      console.error('Download error:', error);
       
-      // Create a simple ZIP file for demo purposes
-      const output = fs.createWriteStream(zipPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      if (downloadRequests.has(token)) {
+        const download = downloadRequests.get(token);
+        download.status = 'error';
+        download.error = error.message;
+        downloadRequests.set(token, download);
+      }
       
-      archive.pipe(output);
-      
-      // Add a dummy HTML file
-      archive.append('<html><body><h1>Downloaded Website</h1><p>This is a demo download.</p></body></html>', { name: 'index.html' });
-      
-      archive.finalize();
-      
-      output.on('close', () => {
-        // Update status to completed
-        downloadRequests.set(token, {
-          status: 'completed',
-          filename: filename,
-          progress: 'Completed',
-          downloadUrl: `/api/download-file/${filename}`
-        });
-        resolve();
-      });
-      
-      archive.on('error', (err) => {
-        clearInterval(progressInterval);
-        downloadRequests.set(token, {
-          status: 'error',
-          error: err.message
-        });
-        reject(err);
-      });
-    }, 5000);
+      reject(error);
+    });
   });
+}
+
+// Create ZIP archive of downloaded files
+function createArchive(websiteDir, token, resolve, reject) {
+  try {
+    const filename = websiteDir + '.zip';
+    const zipPath = path.join('/tmp', filename);
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver('zip', {
+      zlib: { level: 9 }
+    });
+
+    // Listen for archive completion
+    output.on('close', function() {
+      console.log(archive.pointer() + ' total bytes');
+      console.log('Archive finalized');
+      
+      // Update status to completed
+      if (downloadRequests.has(token)) {
+        const download = downloadRequests.get(token);
+        download.status = 'completed';
+        download.filename = filename;
+        download.progress = 'Completed';
+        download.downloadUrl = `/api/download-file/${filename}`;
+        downloadRequests.set(token, download);
+      }
+      
+      resolve();
+    });
+
+    // Handle archive errors
+    archive.on('error', function(err) {
+      console.error('Archive error:', err);
+      
+      if (downloadRequests.has(token)) {
+        const download = downloadRequests.get(token);
+        download.status = 'error';
+        download.error = err.message;
+        downloadRequests.set(token, download);
+      }
+      
+      reject(err);
+    });
+
+    // Pipe archive data to file
+    archive.pipe(output);
+
+    // Add the downloaded website directory to the archive
+    if (fs.existsSync('./' + websiteDir)) {
+      archive.directory('./' + websiteDir, false);
+    } else {
+      // If directory doesn't exist, create a fallback
+      archive.append('Website download completed but no files found.', { name: 'README.txt' });
+    }
+
+    // Finalize the archive
+    archive.finalize();
+    
+  } catch (error) {
+    console.error('Archive creation error:', error);
+    
+    if (downloadRequests.has(token)) {
+      const download = downloadRequests.get(token);
+      download.status = 'error';
+      download.error = error.message;
+      downloadRequests.set(token, download);
+    }
+    
+    reject(error);
+  }
 }
 
 exports.handler = async (event, context) => {
@@ -121,7 +183,7 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // Handle different API endpoints
+    // Handle download request
     if (path === '/download' && event.httpMethod === 'POST') {
       console.log('Download requested');
       const body = JSON.parse(event.body);
@@ -149,7 +211,7 @@ exports.handler = async (event, context) => {
         };
       }
       
-      // Start the download process
+      // Start the real download process
       downloadWebsite(website, token);
       
       return {
