@@ -102,10 +102,11 @@
         })
         .then(data => {
           if (data.status === 'completed') {
+            // Always use the .zip filename returned by the API
             resolve({
               status: 'completed',
               token: token,
-              filename: data.filename,
+              filename: data.filename, // e.g. download_xxx.zip
               downloadUrl: this.config.apiUrl + data.downloadUrl
             });
           } else if (data.status === 'error') {
@@ -134,7 +135,13 @@
     },
 
     // Download the completed file (triggers browser download)
-    downloadFile: function(filename) {
+    // Always expects a .zip filename
+    downloadFile: function(filenameOrToken) {
+      // If the argument is a token, append .zip
+      let filename = filenameOrToken;
+      if (!filename.endsWith('.zip')) {
+        filename = filename + '.zip';
+      }
       const url = this.config.apiUrl + '/api/download-file/' + encodeURIComponent(filename);
       const a = document.createElement('a');
       a.href = url;
