@@ -16,7 +16,7 @@ function extractDomain(url) {
   }
 }
 
-// Real website download using wget
+// Real website download using wget, always to /tmp/<token>
 function downloadWebsite(website, token) {
   return new Promise((resolve, reject) => {
     // Update status to processing
@@ -27,18 +27,17 @@ function downloadWebsite(website, token) {
       startTime: Date.now()
     });
 
-    let websiteDir = "";
-    
-    // Use wget to download the website
-    // wget -mkEpnp: mirror, convert links, adjust extensions, page requisites, no parent
-    const child = exec(`wget -mkEpnp ${website}`);
+    const downloadDir = `/tmp/${token}`;
+    // Ensure the directory exists
+    fs.mkdirSync(downloadDir, { recursive: true });
+
+    // Use wget to download the website into /tmp/<token>
+    // wget -mkEpnp -P /tmp/<token> <website>
+    const wgetCmd = `wget -mkEpnp -P ${downloadDir} --no-check-certificate ${website}`;
+    const child = exec(wgetCmd);
 
     // Read stderr for progress updates
-    child.stderr.on("data", (response) => {
-      if (response.startsWith("Resolving ")) {
-        websiteDir = response.substring(response.indexOf('Resolve ') + 11, response.indexOf(' ('));
-      }
-      
+    child.stderr.on('data', (response) => {
       // Update progress in tracking
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
@@ -47,49 +46,44 @@ function downloadWebsite(website, token) {
       }
     });
 
-    child.stderr.on('close', (response) => {
+    child.on('close', (code) => {
       // Update status to converting
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
-        download.progress = "Converting to ZIP...";
+        download.progress = 'Converting to ZIP...';
         downloadRequests.set(token, download);
       }
-      
       // Start archiving process
-      createArchive(websiteDir, token, resolve, reject);
+      createArchive(downloadDir, token, resolve, reject);
     });
 
     // Handle errors
     child.on('error', (error) => {
       console.error('Download error:', error);
-      
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
         download.status = 'error';
         download.error = error.message;
         downloadRequests.set(token, download);
       }
-      
       reject(error);
     });
   });
 }
 
 // Create ZIP archive of downloaded files
-function createArchive(websiteDir, token, resolve, reject) {
+function createArchive(downloadDir, token, resolve, reject) {
   try {
-    const filename = websiteDir + '.zip';
+    const filename = `${token}.zip`;
     const zipPath = path.join('/tmp', filename);
     const output = fs.createWriteStream(zipPath);
     const archive = archiver('zip', {
       zlib: { level: 9 }
     });
 
-    // Listen for archive completion
     output.on('close', function() {
       console.log(archive.pointer() + ' total bytes');
       console.log('Archive finalized');
-      
       // Update status to completed
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
@@ -99,56 +93,46 @@ function createArchive(websiteDir, token, resolve, reject) {
         download.downloadUrl = `/api/download-file/${filename}`;
         downloadRequests.set(token, download);
       }
-      
+      // Optionally clean up the download directory
+      try {
+        fs.rmSync(downloadDir, { recursive: true, force: true });
+      } catch (e) { /* ignore */ }
       resolve();
     });
 
-    // Handle archive errors
     archive.on('error', function(err) {
       console.error('Archive error:', err);
-      
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
         download.status = 'error';
         download.error = err.message;
         downloadRequests.set(token, download);
       }
-      
       reject(err);
     });
 
-    // Pipe archive data to file
     archive.pipe(output);
-
-    // Add the downloaded website directory to the archive
-    if (fs.existsSync('./' + websiteDir)) {
-      archive.directory('./' + websiteDir, false);
+    // Add the entire download directory to the archive
+    if (fs.existsSync(downloadDir)) {
+      archive.directory(downloadDir, false);
     } else {
-      // If directory doesn't exist, create a fallback
       archive.append('Website download completed but no files found.', { name: 'README.txt' });
     }
-
-    // Finalize the archive
     archive.finalize();
-    
   } catch (error) {
     console.error('Archive creation error:', error);
-    
     if (downloadRequests.has(token)) {
       const download = downloadRequests.get(token);
       download.status = 'error';
       download.error = error.message;
       downloadRequests.set(token, download);
     }
-    
     reject(error);
   }
 }
 
 exports.handler = async (event, context) => {
   console.log('API Function called:', event.path, event.httpMethod);
-  
-  // Handle CORS preflight requests
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -160,14 +144,10 @@ exports.handler = async (event, context) => {
       body: ''
     };
   }
-
   const path = event.path.replace('/.netlify/functions/api', '');
   console.log('Processed path:', path);
-  
   try {
-    // Handle health check
     if (path === '/health' && event.httpMethod === 'GET') {
-      console.log('Health check requested');
       return {
         statusCode: 200,
         headers: {
@@ -182,13 +162,9 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    
-    // Handle download request
     if (path === '/download' && event.httpMethod === 'POST') {
-      console.log('Download requested');
       const body = JSON.parse(event.body);
       const { website, token, options } = body;
-      
       if (!website) {
         return {
           statusCode: 400,
@@ -199,7 +175,6 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({ success: false, error: 'Website URL is required' })
         };
       }
-      
       if (!token) {
         return {
           statusCode: 400,
@@ -210,10 +185,7 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({ success: false, error: 'Token is required' })
         };
       }
-      
-      // Start the real download process
       downloadWebsite(website, token);
-      
       return {
         statusCode: 200,
         headers: {
@@ -223,12 +195,8 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ success: true, token: token })
       };
     }
-    
-    // Handle status check
     else if (path.startsWith('/status/') && event.httpMethod === 'GET') {
       const token = path.split('/status/')[1];
-      console.log('Status check requested for token:', token);
-      
       if (!downloadRequests.has(token)) {
         return {
           statusCode: 404,
@@ -239,9 +207,7 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({ success: false, error: 'Download not found' })
         };
       }
-      
       const download = downloadRequests.get(token);
-      
       if (download.status === 'completed') {
         return {
           statusCode: 200,
@@ -284,16 +250,11 @@ exports.handler = async (event, context) => {
         };
       }
     }
-    
-    // Handle file download
     else if (path.startsWith('/download-file/') && event.httpMethod === 'GET') {
       const filename = path.split('/download-file/')[1];
       const filePath = `/tmp/${filename}`;
-      console.log('File download requested:', filename);
-      
       if (fs.existsSync(filePath)) {
         const fileContent = fs.readFileSync(filePath);
-        
         return {
           statusCode: 200,
           headers: {
@@ -315,10 +276,7 @@ exports.handler = async (event, context) => {
         };
       }
     }
-    
-    // Handle unknown endpoints
     else {
-      console.log('Unknown endpoint:', path);
       return {
         statusCode: 404,
         headers: {
@@ -333,9 +291,7 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    
   } catch (error) {
-    console.error('API Error:', error);
     return {
       statusCode: 500,
       headers: {
