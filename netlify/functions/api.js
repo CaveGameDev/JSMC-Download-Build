@@ -252,8 +252,18 @@ exports.handler = async (event, context) => {
     }
     else if (path.startsWith('/download-file/') && event.httpMethod === 'GET') {
       const filename = path.split('/download-file/')[1];
+      if (!filename.endsWith('.zip')) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ success: false, error: 'Only ZIP files can be downloaded' })
+        };
+      }
       const filePath = `/tmp/${filename}`;
-      if (fs.existsSync(filePath)) {
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         const fileContent = fs.readFileSync(filePath);
         return {
           statusCode: 200,
@@ -272,7 +282,7 @@ exports.handler = async (event, context) => {
             'Access-Control-Allow-Origin': '*',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ success: false, error: 'File not found' })
+          body: JSON.stringify({ success: false, error: 'File not found or is a directory' })
         };
       }
     }
