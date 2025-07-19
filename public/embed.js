@@ -14,6 +14,7 @@
     // Check if API is ready
     checkApiReady: function() {
       return new Promise((resolve, reject) => {
+        // First try the serverless function
         fetch(this.config.apiUrl + '/api/health', {
           method: 'GET',
           headers: {
@@ -29,15 +30,37 @@
         .then(data => {
           if (data.success && data.status === 'ready') {
             this.config.ready = true;
+            this.config.useStaticFallback = false;
             resolve(true);
           } else {
             throw new Error('API not ready');
           }
         })
         .catch(error => {
-          console.warn('WebsiteDownloader API not ready:', error);
-          this.config.ready = false;
-          reject(new Error('WebsiteDownloader API not found or not ready.'));
+          console.warn('Serverless API not ready, trying static fallback:', error);
+          
+          // Try static fallback
+          if (window.handleAPIRequest) {
+            window.handleAPIRequest('/health', 'GET')
+              .then(data => {
+                if (data.success && data.status === 'ready') {
+                  this.config.ready = true;
+                  this.config.useStaticFallback = true;
+                  console.log('Using static API fallback');
+                  resolve(true);
+                } else {
+                  throw new Error('Static API not ready');
+                }
+              })
+              .catch(staticError => {
+                console.error('Both APIs failed:', staticError);
+                this.config.ready = false;
+                reject(new Error('WebsiteDownloader API not found or not ready.'));
+              });
+          } else {
+            this.config.ready = false;
+            reject(new Error('WebsiteDownloader API not found or not ready.'));
+          }
         });
       });
     },
@@ -62,39 +85,56 @@
             
             console.log('[Download] Attempting to download:', url);
             
-            // Make API request to start download
-            fetch(this.config.apiUrl + this.config.downloadEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(downloadData)
-            })
-            .then(response => {
-              if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-              }
-              return response.json();
-            })
-            .then(data => {
-              if (data.success) {
-                console.log('[Download] Download started successfully');
-                // Poll for status
-                this.pollStatus(token, resolve, reject);
-              } else {
-                reject(new Error(data.error || 'Download failed to start'));
-              }
-            })
-            .catch(error => {
-              console.error('[Download] Error:', error);
-              reject(error);
-            });
+            if (this.config.useStaticFallback) {
+              // Use static fallback
+              window.handleAPIRequest('/download', 'POST', downloadData)
+                .then(data => {
+                  if (data.success) {
+                    console.log('[Download] Download started successfully (static)');
+                    this.pollStatusStatic(token, resolve, reject);
+                  } else {
+                    reject(new Error(data.error || 'Download failed to start'));
+                  }
+                })
+                .catch(error => {
+                  console.error('[Download] Static API Error:', error);
+                  reject(error);
+                });
+            } else {
+              // Use serverless function
+              fetch(this.config.apiUrl + this.config.downloadEndpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(downloadData)
+              })
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+              })
+              .then(data => {
+                if (data.success) {
+                  console.log('[Download] Download started successfully');
+                  // Poll for status
+                  this.pollStatus(token, resolve, reject);
+                } else {
+                  reject(new Error(data.error || 'Download failed to start'));
+                }
+              })
+              .catch(error => {
+                console.error('[Download] Error:', error);
+                reject(error);
+              });
+            }
           })
           .catch(reject);
       });
     },
     
-    // Poll for download status
+    // Poll for download status (serverless)
     pollStatus: function(token, resolve, reject) {
       const checkStatus = () => {
         fetch(this.config.apiUrl + this.config.statusEndpoint + '/' + token)
@@ -122,6 +162,35 @@
         })
         .catch(error => {
           console.error('[Download] Status check error:', error);
+          reject(error);
+        });
+      };
+      
+      checkStatus();
+    },
+    
+    // Poll for download status (static fallback)
+    pollStatusStatic: function(token, resolve, reject) {
+      const checkStatus = () => {
+        window.handleAPIRequest('/status/' + token, 'GET')
+        .then(data => {
+          if (data.status === 'completed') {
+            console.log('[Download] Download completed successfully (static)');
+            resolve({
+              status: 'completed',
+              downloadUrl: window.location.origin + data.downloadUrl,
+              filename: data.filename
+            });
+          } else if (data.status === 'error') {
+            reject(new Error(data.error || 'Download failed'));
+          } else {
+            console.log('[Download] Status (static):', data.progress);
+            // Still processing, poll again in 2 seconds
+            setTimeout(checkStatus, 2000);
+          }
+        })
+        .catch(error => {
+          console.error('[Download] Static status check error:', error);
           reject(error);
         });
       };
