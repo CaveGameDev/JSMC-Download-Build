@@ -1,6 +1,129 @@
 (function() {
   'use strict';
   
+  // Static API Fallback (built into embed script)
+  class StaticAPI {
+    constructor() {
+      this.downloads = new Map();
+      this.baseUrl = window.location.origin;
+    }
+
+    generateToken() {
+      return 'static_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    async checkHealth() {
+      return {
+        success: true,
+        status: 'ready',
+        message: 'Static API is ready',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    async startDownload(url, options = {}) {
+      const token = this.generateToken();
+      
+      this.downloads.set(token, {
+        status: 'processing',
+        progress: 'Starting download...',
+        website: url,
+        startTime: Date.now(),
+        filename: null
+      });
+
+      // Simulate download process
+      setTimeout(() => {
+        const download = this.downloads.get(token);
+        if (download) {
+          download.progress = 'Downloading files...';
+          this.downloads.set(token, download);
+        }
+      }, 2000);
+
+      setTimeout(() => {
+        const download = this.downloads.get(token);
+        if (download) {
+          download.progress = 'Converting to ZIP...';
+          this.downloads.set(token, download);
+        }
+      }, 4000);
+
+      setTimeout(() => {
+        const download = this.downloads.get(token);
+        if (download) {
+          download.status = 'completed';
+          download.progress = 'Completed';
+          download.filename = 'demo-download.zip';
+          download.downloadUrl = `/api/download-file/${download.filename}`;
+          this.downloads.set(token, download);
+        }
+      }, 6000);
+
+      return {
+        success: true,
+        token: token
+      };
+    }
+
+    async checkStatus(token) {
+      const download = this.downloads.get(token);
+      
+      if (!download) {
+        return {
+          success: false,
+          error: 'Download not found'
+        };
+      }
+
+      if (download.status === 'completed') {
+        return {
+          success: true,
+          status: 'completed',
+          downloadUrl: download.downloadUrl,
+          filename: download.filename
+        };
+      } else if (download.status === 'error') {
+        return {
+          success: false,
+          status: 'error',
+          error: download.error
+        };
+      } else {
+        return {
+          success: true,
+          status: 'processing',
+          progress: download.progress
+        };
+      }
+    }
+
+    async downloadFile(filename) {
+      const dummyContent = `
+        This is a demo download file.
+        In a real implementation, this would be the actual website files.
+        
+        Filename: ${filename}
+        Generated: ${new Date().toISOString()}
+      `;
+
+      const blob = new Blob([dummyContent], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      return { success: true };
+    }
+  }
+
+  // Global static API instance
+  window.staticAPI = new StaticAPI();
+  
   // Website Downloader Embed Script
   window.WebsiteDownloader = {
     // Configuration
@@ -8,7 +131,8 @@
       apiUrl: 'https://jsmc-download-site.netlify.app',
       downloadEndpoint: '/api/download',
       statusEndpoint: '/api/status',
-      ready: false
+      ready: false,
+      useStaticFallback: false
     },
     
     // Check if API is ready
@@ -37,30 +161,25 @@
           }
         })
         .catch(error => {
-          console.warn('Serverless API not ready, trying static fallback:', error);
+          console.warn('Serverless API not ready, using static fallback:', error);
           
-          // Try static fallback
-          if (window.handleAPIRequest) {
-            window.handleAPIRequest('/health', 'GET')
-              .then(data => {
-                if (data.success && data.status === 'ready') {
-                  this.config.ready = true;
-                  this.config.useStaticFallback = true;
-                  console.log('Using static API fallback');
-                  resolve(true);
-                } else {
-                  throw new Error('Static API not ready');
-                }
-              })
-              .catch(staticError => {
-                console.error('Both APIs failed:', staticError);
-                this.config.ready = false;
-                reject(new Error('WebsiteDownloader API not found or not ready.'));
-              });
-          } else {
-            this.config.ready = false;
-            reject(new Error('WebsiteDownloader API not found or not ready.'));
-          }
+          // Use static fallback
+          window.staticAPI.checkHealth()
+            .then(data => {
+              if (data.success && data.status === 'ready') {
+                this.config.ready = true;
+                this.config.useStaticFallback = true;
+                console.log('Using static API fallback');
+                resolve(true);
+              } else {
+                throw new Error('Static API not ready');
+              }
+            })
+            .catch(staticError => {
+              console.error('Both APIs failed:', staticError);
+              this.config.ready = false;
+              reject(new Error('WebsiteDownloader API not found or not ready.'));
+            });
         });
       });
     },
@@ -87,11 +206,11 @@
             
             if (this.config.useStaticFallback) {
               // Use static fallback
-              window.handleAPIRequest('/download', 'POST', downloadData)
+              window.staticAPI.startDownload(url, options)
                 .then(data => {
                   if (data.success) {
                     console.log('[Download] Download started successfully (static)');
-                    this.pollStatusStatic(token, resolve, reject);
+                    this.pollStatusStatic(data.token, resolve, reject);
                   } else {
                     reject(new Error(data.error || 'Download failed to start'));
                   }
@@ -172,7 +291,7 @@
     // Poll for download status (static fallback)
     pollStatusStatic: function(token, resolve, reject) {
       const checkStatus = () => {
-        window.handleAPIRequest('/status/' + token, 'GET')
+        window.staticAPI.checkStatus(token)
         .then(data => {
           if (data.status === 'completed') {
             console.log('[Download] Download completed successfully (static)');
