@@ -6,14 +6,19 @@ const path = require('path');
 // In-memory storage for download requests (in production, use a database)
 let downloadRequests = new Map();
 
-// Helper function to extract domain from URL
-function extractDomain(url) {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch (e) {
-    return 'unknown';
-  }
+// Helper: Recursively list all files in a directory
+function listFilesRecursive(dir) {
+  let results = [];
+  if (!fs.existsSync(dir)) return results;
+  fs.readdirSync(dir).forEach(file => {
+    const fullPath = path.join(dir, file);
+    if (fs.statSync(fullPath).isDirectory()) {
+      results = results.concat(listFilesRecursive(fullPath));
+    } else {
+      results.push(fullPath);
+    }
+  });
+  return results;
 }
 
 // Real website download using wget, always to /tmp/<token>
@@ -34,7 +39,11 @@ function downloadWebsite(website, token) {
     // Use wget to download the website into /tmp/<token>
     // wget -mkEpnp -P /tmp/<token> <website>
     const wgetCmd = `wget -mkEpnp -P ${downloadDir} --no-check-certificate ${website}`;
+    console.log('Running wget command:', wgetCmd);
     const child = exec(wgetCmd);
+
+    child.stdout.on('data', data => console.log('wget stdout:', data.toString()));
+    child.stderr.on('data', data => console.log('wget stderr:', data.toString()));
 
     // Read stderr for progress updates
     child.stderr.on('data', (response) => {
@@ -47,6 +56,13 @@ function downloadWebsite(website, token) {
     });
 
     child.on('close', (code) => {
+      // Log directory contents after wget
+      try {
+        console.log('Files in downloadDir after wget:', fs.readdirSync(downloadDir));
+        console.log('All files recursively:', listFilesRecursive(downloadDir));
+      } catch (e) {
+        console.log('Error listing files:', e);
+      }
       // Update status to converting
       if (downloadRequests.has(token)) {
         const download = downloadRequests.get(token);
@@ -74,6 +90,13 @@ function downloadWebsite(website, token) {
 // Create ZIP archive of downloaded files
 function createArchive(downloadDir, token, resolve, reject) {
   try {
+    // Log directory contents before zipping
+    try {
+      console.log('Files in downloadDir before zipping:', fs.readdirSync(downloadDir));
+      console.log('All files recursively before zipping:', listFilesRecursive(downloadDir));
+    } catch (e) {
+      console.log('Error listing files before zipping:', e);
+    }
     const filename = `${token}.zip`;
     const zipPath = path.join('/tmp', filename);
     const output = fs.createWriteStream(zipPath);
