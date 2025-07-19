@@ -1,15 +1,9 @@
-const { exec } = require('child_process');
 const archiver = require('archiver');
 const fs = require('fs');
 const path = require('path');
 
 // In-memory storage for download requests (in production, use a database)
 let downloadRequests = new Map();
-
-// Helper function to generate unique token
-function generateToken() {
-  return 'download_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
 
 // Helper function to extract domain from URL
 function extractDomain(url) {
@@ -36,7 +30,7 @@ function downloadWebsite(website, token) {
     // In a real implementation, you'd need to use a different approach
     // since wget isn't available in serverless functions
     
-    let website = extractDomain(website);
+    let domain = extractDomain(website);
     
     // Simulate download progress
     const progressInterval = setInterval(() => {
@@ -52,7 +46,7 @@ function downloadWebsite(website, token) {
       clearInterval(progressInterval);
       
       // Create a dummy ZIP file (in production, you'd create the actual archive)
-      const filename = website + '.zip';
+      const filename = domain + '.zip';
       const zipPath = path.join('/tmp', filename);
       
       // Create a simple ZIP file for demo purposes
@@ -90,6 +84,8 @@ function downloadWebsite(website, token) {
 }
 
 exports.handler = async (event, context) => {
+  console.log('API Function called:', event.path, event.httpMethod);
+  
   // Handle CORS preflight requests
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -104,10 +100,12 @@ exports.handler = async (event, context) => {
   }
 
   const path = event.path.replace('/.netlify/functions/api', '');
+  console.log('Processed path:', path);
   
   try {
     // Handle health check
     if (path === '/health' && event.httpMethod === 'GET') {
+      console.log('Health check requested');
       return {
         statusCode: 200,
         headers: {
@@ -117,13 +115,15 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ 
           success: true, 
           status: 'ready',
-          message: 'Website Downloader API is ready'
+          message: 'Website Downloader API is ready',
+          timestamp: new Date().toISOString()
         })
       };
     }
     
     // Handle different API endpoints
     if (path === '/download' && event.httpMethod === 'POST') {
+      console.log('Download requested');
       const body = JSON.parse(event.body);
       const { website, token, options } = body;
       
@@ -165,6 +165,7 @@ exports.handler = async (event, context) => {
     // Handle status check
     else if (path.startsWith('/status/') && event.httpMethod === 'GET') {
       const token = path.split('/status/')[1];
+      console.log('Status check requested for token:', token);
       
       if (!downloadRequests.has(token)) {
         return {
@@ -226,6 +227,7 @@ exports.handler = async (event, context) => {
     else if (path.startsWith('/download-file/') && event.httpMethod === 'GET') {
       const filename = path.split('/download-file/')[1];
       const filePath = `/tmp/${filename}`;
+      console.log('File download requested:', filename);
       
       if (fs.existsSync(filePath)) {
         const fileContent = fs.readFileSync(filePath);
@@ -254,13 +256,19 @@ exports.handler = async (event, context) => {
     
     // Handle unknown endpoints
     else {
+      console.log('Unknown endpoint:', path);
       return {
         statusCode: 404,
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ success: false, error: 'Endpoint not found' })
+        body: JSON.stringify({ 
+          success: false, 
+          error: 'Endpoint not found',
+          path: path,
+          method: event.httpMethod
+        })
       };
     }
     
@@ -272,7 +280,11 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Origin': '*',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ success: false, error: error.message })
+      body: JSON.stringify({ 
+        success: false, 
+        error: error.message,
+        stack: error.stack
+      })
     };
   }
 }; 
