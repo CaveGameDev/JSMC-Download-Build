@@ -106,6 +106,22 @@ exports.handler = async (event, context) => {
   const path = event.path.replace('/.netlify/functions/api', '');
   
   try {
+    // Handle health check
+    if (path === '/health' && event.httpMethod === 'GET') {
+      return {
+        statusCode: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          success: true, 
+          status: 'ready',
+          message: 'Website Downloader API is ready'
+        })
+      };
+    }
+    
     // Handle different API endpoints
     if (path === '/download' && event.httpMethod === 'POST') {
       const body = JSON.parse(event.body);
