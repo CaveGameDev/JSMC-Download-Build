@@ -228,24 +228,66 @@ website files downloaded from the source.`
       throw new Error('Download not found or not completed');
     }
     
-    // Create JSZip instance
-    const JSZip = window.JSZip || (function() {
-      // Simple ZIP implementation if JSZip is not available
-      let zipContent = '';
-      for (const [filename, content] of Object.entries(download.zipContent)) {
-        zipContent += `=== ${filename} ===\n${content}\n\n`;
-      }
-      return zipContent;
-    })();
+    // Try to use JSZip if available, otherwise create a simple archive
+    if (window.JSZip) {
+      return createJSZipArchive(download);
+    } else {
+      return createSimpleArchive(download);
+    }
+  }
+  
+  // Create ZIP using JSZip library
+  function createJSZipArchive(download) {
+    const zip = new window.JSZip();
+    
+    // Add files to ZIP
+    for (const [filename, content] of Object.entries(download.zipContent)) {
+      zip.file(filename, content);
+    }
+    
+    // Generate ZIP file
+    return zip.generateAsync({type: 'blob'})
+      .then(blob => {
+        // Trigger download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = download.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        return {
+          success: true,
+          filename: download.filename,
+          message: 'ZIP file downloaded successfully using JSZip'
+        };
+      });
+  }
+  
+  // Create simple archive (fallback when JSZip is not available)
+  function createSimpleArchive(download) {
+    // Create a simple text-based archive format
+    let archiveContent = '';
+    archiveContent += '=== WEBSITE DOWNLOAD ARCHIVE ===\n';
+    archiveContent += `Original URL: ${download.website}\n`;
+    archiveContent += `Download Date: ${new Date().toISOString()}\n`;
+    archiveContent += `Total Files: ${Object.keys(download.zipContent).length}\n\n`;
+    
+    for (const [filename, content] of Object.entries(download.zipContent)) {
+      archiveContent += `=== FILE: ${filename} ===\n`;
+      archiveContent += content + '\n\n';
+    }
     
     // Create blob and trigger download
-    const blob = new Blob([JSON.stringify(download.zipContent, null, 2)], { 
-      type: 'application/json' 
+    const blob = new Blob([archiveContent], { 
+      type: 'text/plain' 
     });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = download.filename;
+    a.download = download.filename.replace('.zip', '.txt');
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -253,8 +295,8 @@ website files downloaded from the source.`
     
     return {
       success: true,
-      filename: download.filename,
-      message: 'File downloaded successfully'
+      filename: download.filename.replace('.zip', '.txt'),
+      message: 'Text archive downloaded (JSZip not available for ZIP format)'
     };
   }
   
@@ -349,9 +391,14 @@ website files downloaded from the source.`
     // Download the completed file
     downloadFile: function(token) {
       try {
-        return createAndDownloadZip(token);
+        const result = createAndDownloadZip(token);
+        if (result instanceof Promise) {
+          return result;
+        } else {
+          return Promise.resolve(result);
+        }
       } catch (error) {
-        throw new Error('Failed to download file: ' + error.message);
+        return Promise.reject(new Error('Failed to download file: ' + error.message));
       }
     },
     
