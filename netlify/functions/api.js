@@ -144,7 +144,7 @@ exports.handler = async (event, context) => {
       body: ''
     };
   }
-  const path = event.path.replace('/.netlify/functions/api', '');
+  const path = event.path.replace(/^\/api/, '');
   console.log('Processed path:', path);
   try {
     if (path === '/health' && event.httpMethod === 'GET') {
