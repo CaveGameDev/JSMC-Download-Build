@@ -1,0 +1,9 @@
+{
+  "name": "website-downloader-functions",
+  "version": "1.0.0",
+  "description": "Netlify functions for website downloader API",
+  "main": "api.js",
+  "dependencies": {
+    "archiver": "^5.3.1"
+  }
+} 
